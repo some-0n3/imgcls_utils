@@ -196,17 +196,15 @@ def mini_batch_func(func, batchsize, shuffle=False, mean=True):
                 # function returned a scalar/vector per data-point
                 result = numpy.concatenate(result)
                 return numpy.mean(result, axis=0) if mean else result
-            else:
-                # function returned a scalar/vector per batch
-                if not mean:
-                    return result
-                result = [r * l for r, l in zip(result, lengths)]
-                return sum(result) / sum(lengths)
+            # function returned a scalar/vector per batch
+            if not mean:
+                return result
+            result = [r * l for r, l in zip(result, lengths)]
+            return sum(result) / sum(lengths)
 
         results = [func(*(a[batch] for a in args), **kwargs)
                    for batch in batches]
         if isinstance(results[0], list):
             return [post_process(x) for x in zip(*results)]
-        else:
-            return post_process(results)
+        return post_process(results)
     return wrapper

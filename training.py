@@ -32,10 +32,11 @@ Example
 """
 import pickle
 import time
+from collections import OrderedDict
 
 import numpy
-from theano import function, shared, tensor
 from lasagne.utils import floatX
+from theano import function, shared, tensor
 
 from . import load_model, load_updates, loss_acc, mini_batch_func,\
     save_model, save_updates
@@ -71,6 +72,7 @@ class Trainer(object):
         self.journal = []
         self.updates = None
         self._train = None
+        self._error_names = []
 
         # compile validation function
         input_var = tensor.tensor4('inputs')
@@ -95,7 +97,7 @@ class Trainer(object):
         # TODO : support other types (e.g. shared variable)
         self._learn_rate.set_value(floatX(learning_rate))
 
-    def set_training(self, input_var, target_var, loss, updates):
+    def set_training(self, input_var, target_var, loss, updates, values=None):
         """Set the updates and compile the training function.
 
         Parameters
@@ -110,10 +112,19 @@ class Trainer(object):
         updates : OrderedDict
             The dictionary, mapping all of the network parameters
             to their update expressions.
+        values : dictionary
+            A dictionary with additional values to be logged for the
+            training. The dictionary should map names for the logging
+            to their respective theano variables. The trainer will log
+            the optimized loss and the accuracy anyway.
         """
         self.updates = updates
         _, acc = loss_acc(self.model, input_var, target_var)
-        self._train = function([input_var, target_var], [loss, acc],
+        logging = OrderedDict([('train_err', loss), ('train_acc', acc)])
+        if values is not None:
+            logging.update(values)
+        self._error_names = list(logging.keys())
+        self._train = function([input_var, target_var], list(logging.values()),
                                updates=updates)
 
     def _batch_valid_(self, data, labels):
@@ -184,9 +195,9 @@ class Trainer(object):
         raise NotImplementedError('')
 
     @staticmethod
-    def _log_error_(train_err, valid_err, valid_acc):
+    def _log_error_(errors, valid_err, valid_acc):
         """Print the training, val. loss and val. acc."""
-        print("    Training Loss:          {:>10.6f}".format(train_err))
+        print("    Training Loss:          {:>10.6f}".format(errors[0].mean()))
         print("    Validation Loss:        {:>10.6f}".format(valid_err))
         print("    Validation Accuracy: {:>10.2%}".format(valid_acc))
 
@@ -214,6 +225,12 @@ class Trainer(object):
 
             ``'valid_itr'`` the number of iteration at any point in
             ``'valid_err'`` or  ``'valid_acc'``.
+
+            Additionally to that, there is also a ``numpy.array`` for
+            every entry in the ``errors`` parameter that was passed to
+            the ``Trainer.set_training`` method. The array contains the
+            corresponding values to the theano variable from the
+            parameter for every iteration.
         """
         raise NotImplementedError('')
 
@@ -258,9 +275,8 @@ class EpochTrainer(Trainer):
                      'batchsize': self.batchsize, 'epoch': current}
             start_time = time.time()
 
-            train_err, train_acc = train_fn(*self.dataset.training_set)
-            entry['train_err'] = train_err
-            entry['train_acc'] = train_acc
+            errors = train_fn(*self.dataset.training_set)
+            entry.update(zip(self._error_names, errors))
             valid_err, valid_acc = self.test()
             entry['valid_err'] = valid_err
             entry['valid_acc'] = valid_acc
@@ -269,7 +285,7 @@ class EpochTrainer(Trainer):
             self.journal.append(entry)
             print("Epoch {:>3}/{:>3} took {:.3f}s".format(
                 current, self._total_epochs, duration))
-            self._log_error_(train_err.mean(), valid_err, valid_acc)
+            self._log_error_(errors, valid_err, valid_acc)
 
     def train_epochs(self, epochs, learning_rate, **kwargs):
         """Train the network for a given number of epochs.
@@ -339,11 +355,20 @@ class EpochTrainer(Trainer):
             ``'train_err_epoch'`` the training error by epoch
             (as 2d-array).
 
-            ``'train_acc_epoch''''' the training accuracy (as 2d-array).
+            ``'train_acc_epoch'`` the training accuracy (as 2d-array).
 
-        Note: The network was trained a full epoch so the last batch in
-        every epoch might come from a smaller batch than the other
-        points.
+            Additionally to that, there are also two ``numpy.array``
+            for every entry in the ``errors`` parameter that was passed
+            to the ``Trainer.set_training`` method. One is named after
+            the entry in the parameter and contains the corresponding
+            values to the theano variable for every iteration. The other
+            has the additional postfix ``'_epoch'`` and contains the
+            epoch wise entries just like ``'train_err_epoch'`` and
+            ``'train_acc_epoch'``.
+
+        Note: The network was trained a full epoch (all entries from the
+        data set) so the last batch in every epoch might come from a
+        smaller batch than the others.
         """
         with open(path, 'rb') as fobj:
             journal = pickle.load(fobj)
@@ -354,11 +379,9 @@ class EpochTrainer(Trainer):
             train_acc = numpy.array([j['train_acc'] for j in journal])
 
             epochs, step = train_err.shape
-            assert epochs == len(journal)
-
             learningrates = [[j['learning rate'], ] * step for j in journal]
             batchsizes = [[j['batchsize'], ] * step for j in journal]
-            return {
+            result = {
                 'train_err_epoch': train_err,
                 'train_acc_epoch': train_acc,
                 'learning_rates_epoch': numpy.array(learningrates),
@@ -372,6 +395,16 @@ class EpochTrainer(Trainer):
                 'learning_rates': numpy.hstack(learningrates),
                 'batchsizes': numpy.hstack(batchsizes),
             }
+
+            keys = set()
+            keys.update(*[j.keys() for j in journal])
+            keys -= {'train_err', 'train_acc', 'epoch', 'learning rate',
+                     'batchsize', 'valid_acc', 'valid_err'}
+            for key in keys:
+                result[key + '_epoch'] = numpy.array([j[key] for j in journal])
+                result[key] = numpy.hstack([j[key] for j in journal])
+
+            return result
 
 
 class IterationTrainer(Trainer):
@@ -417,9 +450,8 @@ class IterationTrainer(Trainer):
                      'iteration': current}
             self.journal.append(entry)
             data, labels = next(self._mini_batch_iter)
-            train_err, train_acc = self._train(data, labels)
-            entry['train_err'] = train_err.item()
-            entry['train_acc'] = train_acc.item()
+            errors = self._train(data, labels)
+            entry.update(zip(self._error_names, errors))
 
             if current % tick == 0:
                 duration = time.time() - start_time
@@ -427,7 +459,7 @@ class IterationTrainer(Trainer):
                 entry['valid_err'] = valid_err
                 entry['valid_acc'] = valid_acc
                 print(tmpl.format(current, self._total_iters, tick / duration))
-                self._log_error_(train_err.item(), valid_err, valid_acc)
+                self._log_error_(errors, valid_err, valid_acc)
                 start_time = time.time()
 
     def train_iters(self, iterations, learning_rate, **kwargs):
@@ -488,17 +520,16 @@ class IterationTrainer(Trainer):
                 (j['iteration'] for j in journal),
                 range(1, 1 + len(journal))
             ))
-            return {
-                'train_acc': numpy.array([j['train_acc'] for j in journal]),
-                'train_err': numpy.array([j['train_err'] for j in journal]),
-                'train_itr': numpy.arange(1, len(journal) + 1),
-                'valid_acc': numpy.array([j['valid_acc'] for j in journal
-                                          if 'valid_acc' in j]),
-                'valid_err': numpy.array([j['valid_err'] for j in journal
-                                          if 'valid_err' in j]),
-                'valid_itr': numpy.array([i for i, j in enumerate(journal, 1)
-                                          if 'valid_acc' in j]),
-                'learning_rates': numpy.array(
-                    [j['learning rate'] for j in journal]),
-                'batchsizes': numpy.array([j['batchsize'] for j in journal]),
-               }
+            keys = set()
+            keys.update(*[j.keys() for j in journal])
+            keys -= {'valid_err', 'valid_acc'}
+
+            result = {k: numpy.array([j[k] for j in journal]) for k in keys}
+            result['train_itr'] = numpy.arange(1, len(journal) + 1)
+            result['valid_acc'] = numpy.array([j['valid_acc'] for j in journal
+                                               if 'valid_acc' in j])
+            result['valid_err'] = numpy.array([j['valid_err'] for j in journal
+                                               if 'valid_err' in j])
+            result['valid_itr'] = numpy.array(
+                [i for i, j in enumerate(journal, 1) if 'valid_acc' in j])
+            return result
