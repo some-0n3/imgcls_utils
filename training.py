@@ -72,7 +72,7 @@ class Trainer(object):
         self.journal = []
         self.updates = None
         self._train = None
-        self._error_names = []
+        self._value_names = []
 
         # compile validation function
         input_var = tensor.tensor4('inputs')
@@ -123,7 +123,7 @@ class Trainer(object):
         logging = OrderedDict([('train_err', loss), ('train_acc', acc)])
         if values is not None:
             logging.update(values)
-        self._error_names = list(logging.keys())
+        self._value_names = list(logging.keys())
         self._train = function([input_var, target_var], list(logging.values()),
                                updates=updates)
 
@@ -195,9 +195,9 @@ class Trainer(object):
         raise NotImplementedError('')
 
     @staticmethod
-    def _log_error_(errors, valid_err, valid_acc):
+    def _log_error_(values, valid_err, valid_acc):
         """Print the training, val. loss and val. acc."""
-        print("    Training Loss:          {:>10.6f}".format(errors[0].mean()))
+        print("    Training Loss:          {:>10.6f}".format(values[0].mean()))
         print("    Validation Loss:        {:>10.6f}".format(valid_err))
         print("    Validation Accuracy: {:>10.2%}".format(valid_acc))
 
@@ -227,7 +227,7 @@ class Trainer(object):
             ``'valid_err'`` or  ``'valid_acc'``.
 
             Additionally to that, there is also a ``numpy.array`` for
-            every entry in the ``errors`` parameter that was passed to
+            every entry in the ``values`` parameter that was passed to
             the ``Trainer.set_training`` method. The array contains the
             corresponding values to the theano variable from the
             parameter for every iteration.
@@ -275,8 +275,8 @@ class EpochTrainer(Trainer):
                      'batchsize': self.batchsize, 'epoch': current}
             start_time = time.time()
 
-            errors = train_fn(*self.dataset.training_set)
-            entry.update(zip(self._error_names, errors))
+            values = train_fn(*self.dataset.training_set)
+            entry.update(zip(self._value_names, values))
             valid_err, valid_acc = self.test()
             entry['valid_err'] = valid_err
             entry['valid_acc'] = valid_acc
@@ -285,7 +285,7 @@ class EpochTrainer(Trainer):
             self.journal.append(entry)
             print("Epoch {:>3}/{:>3} took {:.3f}s".format(
                 current, self._total_epochs, duration))
-            self._log_error_(errors, valid_err, valid_acc)
+            self._log_error_(values, valid_err, valid_acc)
 
     def train_epochs(self, epochs, learning_rate, **kwargs):
         """Train the network for a given number of epochs.
@@ -358,7 +358,7 @@ class EpochTrainer(Trainer):
             ``'train_acc_epoch'`` the training accuracy (as 2d-array).
 
             Additionally to that, there are also two ``numpy.array``
-            for every entry in the ``errors`` parameter that was passed
+            for every entry in the ``values`` parameter that was passed
             to the ``Trainer.set_training`` method. One is named after
             the entry in the parameter and contains the corresponding
             values to the theano variable for every iteration. The other
@@ -450,8 +450,8 @@ class IterationTrainer(Trainer):
                      'iteration': current}
             self.journal.append(entry)
             data, labels = next(self._mini_batch_iter)
-            errors = self._train(data, labels)
-            entry.update(zip(self._error_names, errors))
+            values = self._train(data, labels)
+            entry.update(zip(self._value_names, values))
 
             if current % tick == 0:
                 duration = time.time() - start_time
@@ -459,7 +459,7 @@ class IterationTrainer(Trainer):
                 entry['valid_err'] = valid_err
                 entry['valid_acc'] = valid_acc
                 print(tmpl.format(current, self._total_iters, tick / duration))
-                self._log_error_(errors, valid_err, valid_acc)
+                self._log_error_(values, valid_err, valid_acc)
                 start_time = time.time()
 
     def train_iters(self, iterations, learning_rate, **kwargs):
