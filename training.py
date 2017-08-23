@@ -30,6 +30,7 @@ Example
 >>> trainer.train_epochs(20, 0.0001)
 >>> save_model(trainer.model. 'mnist_model.npz')
 """
+import os
 import pickle
 import time
 from collections import OrderedDict
@@ -38,8 +39,8 @@ import numpy
 from lasagne.utils import floatX
 from theano import function, shared, tensor
 
-from . import load_model, load_updates, loss_acc, mini_batch_func,\
-    save_model, save_updates
+from . import load_model, load_updates, loss_acc, mini_batch_func, save_model,\
+    save_updates
 
 
 __all__ = ('EpochTrainer', 'IterationTrainer')
@@ -112,7 +113,7 @@ class Trainer(object):
         updates : OrderedDict
             The dictionary, mapping all of the network parameters
             to their update expressions.
-        values : dictionary
+        values : dictionary or ``None`` (``None``)
             A dictionary with additional values to be logged for the
             training. The dictionary should map names for the logging
             to their respective theano variables. The trainer will log
@@ -140,7 +141,7 @@ class Trainer(object):
         """Return the loss and accuracy over the validation set."""
         return self._batch_valid_(*self.dataset.validation_set)
 
-    def save_state(self, prefix):
+    def save_state(self, prefix, resume=False):
         """Save the state of a trainer into 3 files.
 
         The trainer saves the parameter for the current model, the
@@ -152,11 +153,19 @@ class Trainer(object):
         ----------
         prefix : string
             The file name prefix for the 3 files.
+        resule : boolean (``False``)
+            If ``True`` also save data needed for resuming the training.
+            Otherwise only the model parameters and the journal is saved.
         """
         save_model(self.model, prefix + '.npz')
-        save_updates(self.updates, prefix + '_updates.npz')
         with open(prefix + '_journal.pkl', 'wb') as fobj:
             pickle.dump(self.journal, fobj)
+        if not resume:
+            return
+        save_updates(self.updates, prefix + '_updates.npz')
+        if self.dataset:
+            with open(prefix + '_data.pkl', 'wb') as fobj:
+                pickle.dump(self.dataset, fobj)
 
     @classmethod
     def load_state(cls, model, prefix, **kwargs):
@@ -184,10 +193,21 @@ class Trainer(object):
         """
         model = load_model(model, prefix + '.npz')
         trainer = cls(model, **kwargs)
-        load_updates(trainer.updates, prefix + '_updates.npz')
         with open(prefix + '_journal.pkl', 'rb') as fobj:
             journal = pickle.load(fobj)
         trainer.journal = journal
+        filename = prefix + '_updates.npz'
+        if os.path.isfile(filename):
+            if trainer.updates is None:
+                # TODO : replace with proper logging
+                # TODO : try to get all parameters and set the values
+                print('WARNING : could not load update parameters.')
+            else:
+                load_updates(trainer.updates, filename)
+        filename = prefix + '_data.pkl'
+        if os.path.isfile(filename):
+            with open(filename, 'rb') as fobj:
+                trainer.dataset = pickle.load(fobj)
         return trainer
 
     def train(self, *args, **kwargs):

@@ -99,7 +99,7 @@ Example Code
                  {'iterations': 16000, 'learning rate': 0.01},
                  {'iterations': 16000, 'learning rate': 0.001}])
 
-  _, acc = trainer.validate_model()
+  _, acc = trainer.validate()
   save_model(model, 'model_with_{:0.2f}_acc.npz'.format(acc * 100))
 
 
