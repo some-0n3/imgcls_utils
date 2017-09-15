@@ -63,11 +63,6 @@ def load_updates(updates, path):
         The dictionary containing the updates for the network parameters.
     path : string
         The file with the parameter values,
-
-    Returns
-    -------
-    dictionary of theano variables
-        The dictionary with the variable-values set from the file.
     """
     with numpy.load(path) as fobj:
         for var, i in zip(updates.keys(), range(len(fobj.files))):
@@ -166,7 +161,7 @@ def mini_batch_func(func, batchsize, shuffle=False, mean=True):
     Returns
     -------
     callable
-        a function that executes ``func`` batch-wise
+        A function that executes ``func`` batch-wise.
     """
     @wraps(func)
     def wrapper(*args, **kwargs):

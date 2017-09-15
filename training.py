@@ -15,20 +15,20 @@ Example
 >>> input_var = ...
 >>> target_var = ...
 >>> model = ...
->>>
+>>> 
 >>> trainer = EpochTrainer(model)
 >>> trainer.dataset = MNIST(interval=(0, 1))
->>>
+>>> 
 >>> prediction = get_output(model, inputs=input_var, deterministic=False)
 >>> loss = categorical_crossentropy(prediction, target_var)
 >>> params = get_all_params(model, trainable=True)
 >>> updates = momentum(loss, params, momentum=0.9,
                        learning_rate=trainer.learning_rate)
 >>> trainer.set_training(input_var, target_var, loss, updates)
->>>
+>>> 
 >>> trainer.train_epochs(50, 0.001)
 >>> trainer.train_epochs(20, 0.0001)
->>> save_model(trainer.model. 'mnist_model.npz')
+>>> save_model(trainer.model, 'mnist_model.npz')
 """
 import os
 import pickle
@@ -142,12 +142,12 @@ class Trainer(object):
         return self._batch_valid_(*self.dataset.validation_set)
 
     def save_state(self, prefix, resume=False):
-        """Save the state of a trainer into 3 files.
+        """Save the state of a trainer into 2 or 4 files.
 
         The trainer saves the parameter for the current model, the
-        updates from the optimizer and the journal into 3 separate
-        files. All files will have the given prefix and different
-        endings.
+        updates from the optimizer, the journal and the dataset into 4
+        separate files. All files will have the given prefix and
+        different endings.
 
         Parameters
         ----------
@@ -194,8 +194,7 @@ class Trainer(object):
         model = load_model(model, prefix + '.npz')
         trainer = cls(model, **kwargs)
         with open(prefix + '_journal.pkl', 'rb') as fobj:
-            journal = pickle.load(fobj)
-        trainer.journal = journal
+            trainer.journal = pickle.load(fobj)
         filename = prefix + '_updates.npz'
         if os.path.isfile(filename):
             if trainer.updates is None:
