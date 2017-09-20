@@ -103,6 +103,35 @@ Example Code
   save_model(model, 'model_with_{:0.2f}_acc.npz'.format(acc * 100))
 
 
+Network Visualization
+---------------------
+The module ``visualize`` provides functions to render the network architecture
+as a  graph. It includes the functions ``draw_to_file`` and
+``draw_to_notebook`` that work similarly to `nolearns
+<https://github.com/dnouri/nolearn>`_ implementation, but also allow to
+customize the creation of a ``Node`` in the graph for a given layer.
+The default mechanism creates graphs that look different from nolearn's, but
+to get nolearn's look one could use the following code:
+
+.. code-block:: python
+
+   from utils.visualize import draw_to_file, nolearn
+
+   model = ...
+   draw_to_file(model, 'network.png', nolearn)
+
+The default mechanism uses a ``dict`` mapping the layer types to a format
+string templates and a ``Formmatter`` with some extra functionality.
+The colors for the layers are also taken from a type specific map.
+
+
+Issues
+~~~~~~
++ Recurrent Layers are not (properly) supported
++ Find a better color map
++ not all layer type have (actual) templates
+
+
 Additional Data Sets
 --------------------
 If you want to add your own data set you have to implement a ``download``
