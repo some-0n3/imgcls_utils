@@ -3,3 +3,8 @@ numpy
 scipy
 theano
 lasagne
+
+# plotting
+matplotlib
+# network visualization
+pydotplus
