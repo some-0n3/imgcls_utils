@@ -117,11 +117,10 @@ class Trainer(object):
             A dictionary with additional values to be logged for the
             training. The dictionary should map names for the logging
             to their respective theano variables. The trainer will log
-            the optimized loss and the accuracy anyway.
+            the optimized loss anyway.
         """
         self.updates = updates
-        _, acc = loss_acc(self.model, input_var, target_var)
-        logging = OrderedDict([('train_err', loss), ('train_acc', acc)])
+        logging = OrderedDict([('train_err', loss), ])
         if values is not None:
             logging.update(values)
         self._value_names = list(logging.keys())
@@ -235,8 +234,6 @@ class Trainer(object):
             A dictionary containing the following training information:
 
             ``'train_err'`` the training error (loss) for each iteration.
-
-            ``'train_acc'`` the training accuracy for each iteration.
 
             ``'valid_err'`` the error (cross-entropy) on the test set.
 
@@ -362,8 +359,6 @@ class EpochTrainer(Trainer):
 
             ``'train_err'`` the training error (loss) for each iteration.
 
-            ``'train_acc'`` the training accuracy for each iteration.
-
             ``'valid_err'`` the error (cross-entropy) on the test set.
 
             ``'valid_acc'`` the accuracy on the test set.
@@ -374,16 +369,13 @@ class EpochTrainer(Trainer):
             ``'train_err_epoch'`` the training error by epoch
             (as 2d-array).
 
-            ``'train_acc_epoch'`` the training accuracy (as 2d-array).
-
             Additionally to that, there are also two ``numpy.array``
             for every entry in the ``values`` parameter that was passed
             to the ``Trainer.set_training`` method. One is named after
             the entry in the parameter and contains the corresponding
             values to the theano variable for every iteration. The other
             has the additional postfix ``'_epoch'`` and contains the
-            epoch wise entries just like ``'train_err_epoch'`` and
-            ``'train_acc_epoch'``.
+            epoch wise entries just like ``'train_err_epoch'``.
 
         Note: The network was trained a full epoch (all entries from the
         data set) so the last batch in every epoch might come from a
@@ -395,18 +387,15 @@ class EpochTrainer(Trainer):
                                               range(1, 1 + len(journal))))
 
             train_err = numpy.array([j['train_err'] for j in journal])
-            train_acc = numpy.array([j['train_acc'] for j in journal])
 
             epochs, step = train_err.shape
             learningrates = [[j['learning rate'], ] * step for j in journal]
             batchsizes = [[j['batchsize'], ] * step for j in journal]
             result = {
                 'train_err_epoch': train_err,
-                'train_acc_epoch': train_acc,
                 'learning_rates_epoch': numpy.array(learningrates),
                 'batchsizes_epoch': numpy.array(batchsizes),
                 'train_err': numpy.hstack(train_err),
-                'train_acc': numpy.hstack(train_acc),
                 'train_itr': numpy.arange(1, epochs * step + 1),
                 'valid_acc': numpy.array([j['valid_acc'] for j in journal]),
                 'valid_err': numpy.array([j['valid_err'] for j in journal]),
@@ -417,8 +406,8 @@ class EpochTrainer(Trainer):
 
             keys = set()
             keys.update(*[j.keys() for j in journal])
-            keys -= {'train_err', 'train_acc', 'epoch', 'learning rate',
-                     'batchsize', 'valid_acc', 'valid_err'}
+            keys -= {'train_err', 'epoch', 'learning rate', 'batchsize',
+                     'valid_acc', 'valid_err'}
             for key in keys:
                 result[key + '_epoch'] = numpy.array([j[key] for j in journal])
                 result[key] = numpy.hstack([j[key] for j in journal])
