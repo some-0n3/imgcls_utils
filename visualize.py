@@ -21,8 +21,7 @@ The module provides the following creation functions:
 
     ``format_create`` allows type specific node creation by using string
         formatting. The color of the node and a format string that is
-        used to create the label are passed on as two separate
-        dictionaries.
+        used to create the label are passed on as two dictionaries.
 
     ``default_create`` is the default creator and executes
         ``format_create`` with either a short format map or
@@ -99,14 +98,14 @@ def nolearn(layer, output_shape=True, verbose=False, **kwargs):
     Parameters
     ----------
     layer : a class:`Layer` instance
-        the layer for which a node shall be created.
+        The layer for which a node shall be created.
     output_shape : boolean (``True``)
-        if ``True`` the output shape of the layer will be displayed.
+        If ``True`` the output shape of the layer will be displayed.
     verbose : boolean (''False`)
-        if ``True`` layer attributes like filter shape, stride, etc.
+        If ``True`` layer attributes like filter shape, stride, etc.
         will be displayed.
     kwargs : keyword arguments
-        those will be passed down to ``Node``
+        Those will be passed down to :class:`Node`.
     """
     label = type(layer).__name__
     color = _nolearn_color(layer)
@@ -114,16 +113,16 @@ def nolearn(layer, output_shape=True, verbose=False, **kwargs):
         for attr in ['num_filters', 'num_units', 'ds', 'filter_shape',
                      'stride', 'strides', 'p']:
             if hasattr(layer, attr):
-                label += '\n{0}: {1}'.format(attr, getattr(layer, attr))
+                label += f'\n{attr}: {getattr(layer, attr)}'
         if hasattr(layer, 'nonlinearity'):
             try:
                 nonlinearity = layer.nonlinearity.__name__
             except AttributeError:
                 nonlinearity = layer.nonlinearity.__class__.__name__
-            label += '\nnonlinearity: {0}'.format(nonlinearity)
+            label += f'\nnonlinearity: {nonlinearity}'
 
     if output_shape:
-        label += '\nOutput shape: {0}'.format(layer.output_shape)
+        label += f'\nOutput shape: {layer.output_shape}'
 
     return Node(repr(layer), label=label, shape='record',
                 fillcolor=color, style='filled', **kwargs)
@@ -154,10 +153,10 @@ def colors_from_cmap(types=None, color_map='terrain'):
     Parameters
     ----------
     layers : list of :class:`Layer` instances or ``None`` (``None``)
-        the color dict will be created for this list of layers, if
+        The color dict will be created for this list of layers, if
         ``None`` a list of all layers is retrieved from lasagne.
     color_map : string or colormap (``'terrain'``)
-        the colormap to use.
+        The colormap to use.
     """
     types = types or _types_from_lasange()
     cmap = get_cmap(color_map, 2 + len(types) * 1.1)
@@ -184,18 +183,18 @@ def verbose_create(layer, color_map=DEFAULT_MAP,
     Parameters
     ----------
     layer : a :class:`Layer` instance
-        the layer.
+        The layer.
     color_map ; dictionary
-        a dictionary that maps all layer types to a color value.
+        A dictionary that maps all layer types to a color value.
     blacklist : sequence of strings
-        a list of attribute names that are not included.
+        A list of attribute names that are not included.
     kwargs : keyword arguments
-        those will be passed down to ``Node``
+        Those will be passed down to :class:`Node`.
     """
     label = type(layer).__name__
     color = color_map[type(layer)]
     variables = vars(layer)
-    label += '\n' + '\n'.join(('{} : {}'.format(n, dot_escape(variables[n]))
+    label += '\n' + '\n'.join((f'{n} : {dot_escape(variables[n])}'
                                for n in sorted(variables)
                                if n not in blacklist))
     return Node(repr(layer), label=label, shape='record',
@@ -631,13 +630,13 @@ class ParamFormatter(Formatter):
     def activation_shape(shape):
         """Format a input and output shape."""
         if len(shape) == 2:
-            return '{} units'.format(shape[1])
+            return f'{shape[1]} units'
         elif len(shape) == 4:
             return '{} ch, {} x {}'.format(*shape[1:])
         elif len(shape) == 5:
             return '{} ch, {} x {} x {}'.format(*shape[1:])
         else:
-            raise ValueError('Can\'t handle shape "{}".'.format(shape))
+            raise ValueError(f'Can not handle shape "{shape}".')
 
     @staticmethod
     def param_shape(shape):
@@ -645,7 +644,7 @@ class ParamFormatter(Formatter):
         if shape is None:
             return 'none'
         if len(shape) == 1:
-            return '[{}, ]'.format(shape[0])
+            return f'[{shape[0]}, ]'
         return '[{}]'.format(', '.join(str(i) for i in shape))
 
     def get_value(self, key, args, kwargs):
@@ -687,19 +686,19 @@ def format_create(layer, format_map, color_map=DEFAULT_MAP,
     Parameters
     ----------
     layer : a :class:`Layer` instance
-        the layer.
+        The layer.
     format_map : a dictionary mapping layer types to format strings
-        a dictionary that contains a format string for each of the
-        layer's types. The information for the node is created by
-        using ``formatter`` to call format with all the layer
-        attributes as (keyword) arguments.
+        A dictionary that contains a format string for each of the
+        layer's types. The information for the node is created by using
+        ``formatter`` to call format with all the layer attributes as
+        (keyword) arguments.
     color_map: a dictionary mapping layer types to strings
-        the dictionary should contain all the color for all the used
+        The dictionary should contain all the colors for all the used
         layer types.
     formatter : :class:`Formatter` instance
-        the formatter for creating the node information.
+        The formatter for creating the node information.
     kwargs : keyword arguments
-        those will be passed down to ``Node``
+        Those will be passed down to :class:`Node`.
     """
     color = color_map[type(layer)]
     variables = {n: getattr(layer, n) for n in dir(layer)}
@@ -714,11 +713,11 @@ def default_create(layer, verbose=False, **kwargs):
     Parameters
     ----------
     layer : a :class:`Layer` instance
-        the layer.
+        The layer.
     verbose : boolean (``False``)
-        show extra information if ``True``.
+        Show extra information if ``True``.
     kwargs : keyword arguments
-        those will be passed to ``format_create`` and ``Node``.
+        Those will be passed to ``format_create`` and :class:`Node`.
     """
     frmt_dct = VERBOSE if verbose else SHORT
     return format_create(layer, frmt_dct, **kwargs)
@@ -733,14 +732,14 @@ def draw_to_file(layer_or_layers, filename, node_creator=default_create,
     Parameters
     ----------
     layer_or_layers : one :class:`Layer` instance or a list of layers
-        either a list of layers or the model in form of the last layer.
+        Either a list of layers or the model in form of the last layer.
     filename : string
         The filename to save the output to.
     node_creator : callable
-        function that creates a :class:`Node` for a given layer.
+        A function that creates a :class:`Node` for a given layer.
     kwargs : keyword arguments
-        those will be passed to ``pydot_graph``, ``node_creator`` and
-        later to ``Node``.
+        Those will be passed to ``pydot_graph``, ``node_creator`` and
+        later to :class:`Node`.
     """
     if isinstance(layer_or_layers, Layer):
         layers = get_all_layers(layer_or_layers)
@@ -758,12 +757,12 @@ def draw_to_notebook(layer_or_layers, node_creator=default_create, **kwargs):
     Parameters
     ----------
     layer_or_layers : one :class:`Layer` instance or a list of layers
-        either a list of layers or the model in form of the last layer.
+        Either a list of layers or the model in form of the last layer.
     node_creator : callable
-        function that creates a :class:`Node` for a given layer.
+        A function that creates a :class:`Node` for a given layer.
     kwargs : keyword arguments
-        those will be passed to ``pydot_graph``, ``node_creator`` and
-        later to ``Node``.
+        Those will be passed to ``pydot_graph``, ``node_creator`` and
+        later to :class:`Node`.
     """
     from IPython.display import Image
     if isinstance(layer_or_layers, Layer):
@@ -780,11 +779,11 @@ def pydot_graph(layers, node_creator=default_create, **kwargs):
     Parameters
     ----------
     layers : list of :class:`Layer` instances
-        the graph will be created with the layers from that list.
+        The graph will be created with the layers from that list.
     node_creator : callable (``default_create``)
-        a function that creates a :class:`Node` for a given layer.
+        A function that creates a :class:`Node` for a given layer.
     kwargs : keyword arguments
-        those will be passed down to ``node_creator`` or ``Node``.
+        Those will be passed down to ``node_creator`` or :class:`Node`.
     """
     nodes = {}
     edges = []

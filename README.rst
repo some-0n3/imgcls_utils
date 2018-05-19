@@ -88,7 +88,7 @@ Example Code
 
         params = get_all_params(self.model, trainable=True)
         updates = momentum(loss, params, momentum=0.9,
-                           learning_rate=self.learn_rate)
+                           learning_rate=self.learning_rate)
 
         self.set_training(input_var, target_var, loss, updates)
 
@@ -101,6 +101,26 @@ Example Code
 
   _, acc = trainer.validate()
   save_model(model, 'model_with_{:0.2f}_acc.npz'.format(acc * 100))
+
+
+Reproducibility
+---------------
+The ``states`` that can be used to save and load a data set or trainer are
+designed to ensure a certain level of reproducibility. Two identical trainer
+states, trained with the same parameters, should yield identical (very similar)
+models. This is done by saving random states for all data set iterations, noise
+layers and others things, along side the training, test and validation data.
+
+To enable the reproducibility for the trainer's states you have to enable the
+deterministic algorithms for the forward and backward passes. This can be done
+by adding the following code to your ``theanorc`` file.
+
+.. code-block:: text
+
+   [dnn.conv]
+   algo_fwd=deterministic
+   algo_bwd_data=deterministic
+   algo_bwd_filter=deterministic
 
 
 Network Visualization
@@ -155,6 +175,15 @@ loads the data from the files and returns a ``dict`` with the fields
            download('www.example.com/mydataset.pkl', join(root, 'mydata.pkl'),
                    overwrite=overwrite)
 
-       def create(self, root='./_datasets'):
+       def extract(self, root='./_datasets'):
            with open(join(root, 'mydata.pkl')) as fobj:
                return pickle.load(fobj)
+
+
+Reproducibility and Image Augmentation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+To ensure reproducibility when a image augmentation is used, add the data class
+wrapper to the data set class. Please see the `augmented CIFAR
+<data/cifar_lee14.py>`_ or `MNIST distractor <data/mnist_distractor.py>`_
+for examples. The data wrapper that performs the image augmentation should also
+posses a ``from_state`` method, that loads the data (in a reproducible way).

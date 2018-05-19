@@ -16,10 +16,9 @@ from os import makedirs
 from os.path import join
 
 import numpy
-from lasagne.utils import floatX
 from scipy.io import loadmat
 
-from . import DataSet, change_interval, download
+from . import DataSet, download
 
 
 __all__ = ('SVHN', 'FullSVHN')
@@ -28,12 +27,12 @@ __all__ = ('SVHN', 'FullSVHN')
 def load_file(filepath):
     """Load data and labels from a file."""
     read = loadmat(filepath)
-    return read['X'].transpose(3, 2, 0, 1), read['y'].flatten()
+    return read['X'].transpose(3, 2, 0, 1), read['y'].flatten() - 1
 
 
 def download_file(name, root, overwrite=False):
     """Download one of the files."""
-    download('http://ufldl.stanford.edu/housenumbers/{}'.format(name),
+    download(f'http://ufldl.stanford.edu/housenumbers/{name}',
              join(root, name), overwrite)
 
 
@@ -41,22 +40,25 @@ class SVHN(DataSet):
     """The (small) Street View House Numbers data set.
 
     Street View House Numbers data set consist of 32x32 color images
-    depicting the digits from 0 to 9. Each image shows a digit in
-    it's center and may also a distracting digit at either side.
+    depicting the numbers from 1 to 10. Each image shows a number in
+    it's center and may also a distracting number at either side.
 
     The data set consists of 73,257 training and 26,032 validation
     images.
 
     Parameters
     ----------
-    testsplit : float in [0, 1] or integer (``0``)
-        Says how may data points from the training set are reserved
-        for the test set. If ``testsplit`` is ``0`` (or less) the
-        validation set is used as test set.
-        The parameter is either a float in [0, 1] describing the split
-        in percent or an integer describing the number of elements.
-    interval : tuple (pair) of numbers or ``None`` (``None``)
-        The interval to put the data points into.
+    testsplit : ``None``, ``'validation'`` or positive number (``None``)
+        Create a hold out test set (or not) from some of the training
+        data. In case of ``None``, no test set will be created. The
+        string ``'validation'`` will use the validation set for this.
+        In case ``testsplit`` is a number the test set will be randomly
+        drawn from the training set. If the number is an integer it will
+        specify the number of examples in the test set. A float in [0, 1]
+        describes the split in percent.
+    interval : tuple (pair) of numbers or ``None`` (``(0, 1)``)
+        The interval to put the data points into. In case of ``None`` the
+        interval will not be changed.
     root: string (``'./_datasets'``)
         The root-directory for all the files (downloaded and cached).
     overwrite: boolean (``False``)
@@ -66,7 +68,7 @@ class SVHN(DataSet):
     <http://ufldl.stanford.edu/housenumbers/>`_.
     """
 
-    cache_file = 'svhn.pkl'
+    cache_file = 'svhn.npz'
 
     def download(self, root='./_datasets', overwrite=False):
         root = join(root, 'svhn')
@@ -74,7 +76,7 @@ class SVHN(DataSet):
         download_file('train_32x32.mat', root, overwrite)
         download_file('test_32x32.mat', root, overwrite)
 
-    def create(self, root='./_datasets'):
+    def extract(self, root='./_datasets'):
         train_data, train_labels = load_file(
             join(root, 'svhn', 'train_32x32.mat'))
         valid_data, valid_labels = load_file(
@@ -89,22 +91,25 @@ class FullSVHN(SVHN):
     """The (full) Street View House Numbers data set.
 
     Street View House Numbers data set consist of 32x32 color images
-    depicting the digits from 0 to 9. Each image shows a digit in
-    it's center and may also a distracting digit at either side.
+    depicting the numbers from 1 to 10. Each image shows a number in
+    it's center and may also a distracting number at either sides.
 
-    This class provides the 73,257 training and 26,032 validation, as
-    well as 531,131 extra samples.
+    This class provides a joined training set with 604,388 images and the
+    validation set with 26,032 images.
 
     Parameters
     ----------
-    testsplit : float in [0, 1] or integer (``0``)
-        Says how may data points from the training set are reserved
-        for the test set. If ``testsplit`` is ``0`` (or less) the
-        validation set is used as test set.
-        The parameter is either a float in [0, 1] describing the split
-        in percent or an integer describing the number of elements.
-    interval : tuple (pair) of numbers or ``None`` (``None``)
-        The interval to put the data points into.
+    testsplit : ``None``, ``'validation'`` or positive number (``None``)
+        Create a hold out test set (or not) from some of the training
+        data. In case of ``None``, no test set will be created. The
+        string ``'validation'`` will use the validation set for this.
+        In case ``testsplit`` is a number the test set will be randomly
+        drawn from the training set. If the number is an integer it will
+        specify the number of examples in the test set. A float in [0, 1]
+        describes the split in percent.
+    interval : tuple (pair) of numbers or ``None`` (``(0, 1)``)
+        The interval to put the data points into. In case of ``None`` the
+        interval will not be changed.
     root: string (``'./_datasets'``)
         The root-directory for all the files (downloaded and cached).
     overwrite: boolean (``False``)
@@ -114,36 +119,20 @@ class FullSVHN(SVHN):
     <http://ufldl.stanford.edu/housenumbers/>`_.
     """
 
-    cache_file = 'svhn_full.pkl'
-
-    def __init__(self, *args, interval=None, **kwargs):
-        super(FullSVHN, self).__init__(*args, interval=interval, **kwargs)
-        self._x_extra = floatX(self.__dct__['extra data'])
-        if interval is not None:
-            self._x_extra = change_interval(self._x_extra, new=interval)
-        self._y_extra = self.__dct__['extra labels'].astype(numpy.int32)
+    cache_file = 'svhn_full.npz'
 
     def download(self, root='./_datasets', overwrite=False):
         super(FullSVHN, self).download(root=root, overwrite=overwrite)
         download_file('extra_32x32.mat', join(root, 'svhn'), overwrite)
 
-    def create(self, root='./_datasets'):
-        dct = super(FullSVHN, self).create(root=root)
-        data, labels = load_file(join(root, 'svhn', 'extra_32x32.mat'))
-        dct['extra data'], dct['extra labels'] = data, labels
+    def extract(self, root='./_datasets'):
+        dct = super(FullSVHN, self).extract(root=root)
+        ex_data, ex_labels = load_file(join(root, 'svhn', 'extra_32x32.mat'))
+        tr_data, tr_labels = dct['training data'], dct['training labels']
+        dct['original training data'] = tr_data
+        dct['original training labels'] = tr_labels
+        dct['extra data'] = ex_data
+        dct['extra labels'] = ex_labels
+        dct['training data'] = numpy.concatenate((tr_data, ex_data))
+        dct['training labels'] = numpy.concatenate((tr_labels, ex_labels))
         return dct
-
-    @property
-    def extra_data(self):
-        """The data from the extra samples."""
-        return self._x_extra
-
-    @property
-    def extra_labels(self):
-        """The labels from the extra samples."""
-        return self._y_extra
-
-    @property
-    def extra_set(self):
-        """The extra data and labels."""
-        return self.extra_data, self.extra_labels

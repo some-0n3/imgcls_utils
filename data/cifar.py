@@ -12,7 +12,7 @@ from os.path import join
 
 import numpy
 
-from . import DataSet, split, download
+from . import DataSet, download
 
 
 __all__ = ('CIFAR10', 'CIFAR100')
@@ -36,14 +36,17 @@ class CIFAR10(DataSet):
 
     Parameters
     ----------
-    testsplit : float in [0, 1] or integer (``0``)
-        Says how may data points from the training set are reserved
-        for the test set. If ``testsplit`` is ``0`` (or less) the
-        validation set is used as test set.
-        The parameter is either a float in [0, 1] describing the split
-        in percent or an integer describing the number of elements.
-    interval : tuple (pair) of numbers or ``None`` (``None``)
-        The interval to put the data points into.
+    testsplit : ``None``, ``'validation'`` or positive number (``None``)
+        Create a hold out test set (or not) from some of the training
+        data. In case of ``None``, no test set will be created. The
+        string ``'validation'`` will use the validation set for this.
+        In case ``testsplit`` is a number the test set will be randomly
+        drawn from the training set. If the number is an integer it will
+        specify the number of examples in the test set. A float in [0, 1]
+        describes the split in percent.
+    interval : tuple (pair) of numbers or ``None`` (``(0, 1)``)
+        The interval to put the data points into. In case of ``None`` the
+        interval will not be changed.
     root : string (``'./_datasets'``)
         The root-directory for all the files (downloaded and cached).
     overwrite : boolean (``False``)
@@ -53,19 +56,19 @@ class CIFAR10(DataSet):
     <https://www.cs.toronto.edu/~kriz/cifar.html>`_.
     """
 
-    cache_file = 'cifar10.pkl'
+    cache_file = 'cifar10.npz'
     tar_file = 'cifar-10-python.tar.gz'
     url = 'https://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz'
 
     def download(self, root='./_datasets', overwrite=False):
         download(self.url, join(root, self.tar_file), overwrite=overwrite)
 
-    def create(self, root='./_datasets'):
+    def extract(self, root='./_datasets'):
         training = []
         result = {}
         with tarfile.open(join(root, self.tar_file)) as archive:
             # training data
-            for bpath in ('cifar-10-batches-py/data_batch_{}'.format(i)
+            for bpath in (f'cifar-10-batches-py/data_batch_{i}'
                           for i in range(1, 6)):
                 member = archive.getmember(bpath)
                 dct = pickle.load(archive.extractfile(member),
@@ -137,14 +140,17 @@ class CIFAR100(DataSet):
 
     Parameters
     ----------
-    testsplit : float in [0, 1] or integer (``0``)
-        Says how may data points from the training set are reserved
-        for the test set. If ``testsplit`` is ``0`` (or less) the
-        validation set is used as test set.
-        The parameter is either a float in [0, 1] describing the split
-        in percent or an integer describing the number of elements.
-    interval : tuple (pair) of numbers or ``None`` (``None``)
-        The interval to put the data points into.
+    testsplit : ``None``, ``'validation'`` or positive number (``None``)
+        Create a hold out test set (or not) from some of the training
+        data. In case of ``None``, no test set will be created. The
+        string ``'validation'`` will use the validation set for this.
+        In case ``testsplit`` is a number the test set will be randomly
+        drawn from the training set. If the number is an integer it will
+        specify the number of examples in the test set. A float in [0, 1]
+        describes the split in percent.
+    interval : tuple (pair) of numbers or ``None`` (``(0, 1)``)
+        The interval to put the data points into. In case of ``None`` the
+        interval will not be changed.
     root : string (``'./_datasets'``)
         The root-directory for all the files (downloaded and cached).
     overwrite : boolean (``False``)
@@ -154,36 +160,17 @@ class CIFAR100(DataSet):
     <https://www.cs.toronto.edu/~kriz/cifar.html>`_.
     """
 
-    cache_file = 'cifar100.pkl'
+    cache_file = 'cifar100.npz'
     tar_file = 'cifar-100-python.tar.gz'
     url = 'https://www.cs.toronto.edu/~kriz/cifar-100-python.tar.gz'
-
-    def __init__(self, testsplit=0, **kwargs):
-        super(CIFAR100, self).__init__(testsplit=0, **kwargs)
-        self._y_valid_fine = self.__dct__['fine validation labels'].astype(
-            numpy.int32)
-        self._y_valid_coarse = self.__dct__['coarse validation labels'].astype(
-            numpy.int32)
-        self._y_train_fine = self.__dct__['fine training labels'].astype(
-            numpy.int32)
-        self._y_train_coarse = self.__dct__['coarse training labels'].astype(
-            numpy.int32)
-
-        if testsplit > 0:
-            self._x_train, itrain, self._x_test, itest = split(
-                self._x_train, numpy.arange(len(self._x_train)), testsplit)
-            self._y_test = self._y_test_fine = self._y_train_fine[itest]
-            self._y_test_coarse = self._y_train_coarse[itest]
-            self._y_train = self._y_train_fine = self._y_train[itrain]
-            self._y_train_coarse = self._y_train_coarse[itrain]
 
     def download(self, root='./_datasets', overwrite=False):
         download(self.url, join(root, self.tar_file), overwrite=overwrite)
 
-    def create(self, root='./_datasets'):
+    def extract(self, root='./_datasets'):
         def get_data(archive, name):
             """Retrieve data from an archived file."""
-            member = archive.getmember('cifar-100-python/{}'.format(name))
+            member = archive.getmember(f'cifar-100-python/{name}')
             dct = pickle.load(archive.extractfile(member), encoding='bytes')
             return format_data(dct[b'data'], dct[b'coarse_labels'],
                                dct[b'fine_labels'])
@@ -202,33 +189,3 @@ class CIFAR100(DataSet):
             result['fine validation labels'] = flabels
             result['coarse validation labels'] = clabels
         return result
-
-    @property
-    def validation_labels_fine(self):
-        """The fine labels of the validation set."""
-        return self._y_valid_fine
-
-    @property
-    def validation_labels_coarse(self):
-        """The coarse labels of the validation set."""
-        return self._y_valid_coarse
-
-    @property
-    def test_labels_fine(self):
-        """The fine labels of the test set."""
-        return self._y_test_fine
-
-    @property
-    def test_labels_coarse(self):
-        """The coarse labels of the test set."""
-        return self._y_test_coarse
-
-    @property
-    def training_labels_fine(self):
-        """The fine labels of the training set."""
-        return self._y_train_fine
-
-    @property
-    def training_labels_coarse(self):
-        """The coarse labels of the training set."""
-        return self._y_train_coarse

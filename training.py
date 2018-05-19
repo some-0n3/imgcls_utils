@@ -15,17 +15,17 @@ Example
 >>> input_var = ...
 >>> target_var = ...
 >>> model = ...
->>> 
+>>>
 >>> trainer = EpochTrainer(model)
 >>> trainer.dataset = MNIST(interval=(0, 1))
->>> 
+>>>
 >>> prediction = get_output(model, inputs=input_var, deterministic=False)
 >>> loss = categorical_crossentropy(prediction, target_var)
 >>> params = get_all_params(model, trainable=True)
 >>> updates = momentum(loss, params, momentum=0.9,
                        learning_rate=trainer.learning_rate)
 >>> trainer.set_training(input_var, target_var, loss, updates)
->>> 
+>>>
 >>> trainer.train_epochs(50, 0.001)
 >>> trainer.train_epochs(20, 0.0001)
 >>> save_model(trainer.model, 'mnist_model.npz')
@@ -34,16 +34,42 @@ import os
 import pickle
 import time
 from collections import OrderedDict
+from warnings import warn
 
 import numpy
+from lasagne.layers.helper import get_all_layers
 from lasagne.utils import floatX
 from theano import function, shared, tensor
+from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
 from . import load_model, load_updates, loss_acc, mini_batch_func, save_model,\
     save_updates
+from .data import DataSet
 
 
 __all__ = ('EpochTrainer', 'IterationTrainer')
+
+
+def get_random_streams(model):
+    """Return a list with all ``RandomStreams`` in the model."""
+    return [l._srng for l in get_all_layers(model) if hasattr(l, '_srng')]
+
+
+def save_random_streams(streams, path):
+    """Save a list of random streams to a file."""
+    dct = {}
+    for i, stream in enumerate(streams):
+        stream.seed()
+        dct[f'seed_{i}'] = stream.default_instance_seed
+    numpy.savez(path, **dct)
+
+
+def load_random_streams(model, path):
+    """Load the random streams from a file into a model."""
+    layers = [l for l in get_all_layers(model) if hasattr(l, '_srng')]
+    with numpy.load(path) as fobj:
+        for i, layer in enumerate(layers):
+            layer._srng = RandomStreams(fobj[f'seed_{i}'].item())
 
 
 class Trainer(object):
@@ -63,6 +89,8 @@ class Trainer(object):
     val_batchsize : integer (``500``)
         The batch size used for testing and validation.
     """
+
+    dataset_cls = DataSet
 
     def __init__(self, model, dataset=None, batchsize=256, val_batchsize=500):
         self.model = model
@@ -116,8 +144,7 @@ class Trainer(object):
         values : dictionary or ``None`` (``None``)
             A dictionary with additional values to be logged for the
             training. The dictionary should map names for the logging
-            to their respective theano variables. The trainer will log
-            the optimized loss anyway.
+            to their respective theano variables.
         """
         self.updates = updates
         logging = OrderedDict([('train_err', loss), ])
@@ -128,58 +155,64 @@ class Trainer(object):
                                updates=updates)
 
     def _batch_valid_(self, data, labels):
+        # TODO : replace with `DataSet.iter`
         val_fn = mini_batch_func(self._validate, self.val_bsize)
         err, acc = val_fn(data, labels)
         return err, acc
 
     def test(self):
         """Return the loss and accuracy over the test set."""
-        return self._batch_valid_(*self.dataset.test_set)
+        if self.dataset.test:
+            return self._batch_valid_(*self.dataset.test.set)
+        return floatX('nan'), floatX('nan')
 
     def validate(self):
         """Return the loss and accuracy over the validation set."""
-        return self._batch_valid_(*self.dataset.validation_set)
+        return self._batch_valid_(*self.dataset.validation.set)
 
     def save_state(self, prefix, resume=False):
-        """Save the state of a trainer into 2 or 4 files.
+        """Save the state of a trainer into 2 or 5 files.
 
         The trainer saves the parameter for the current model, the
-        updates from the optimizer, the journal and the dataset into 4
+        updates from the optimizer, state information about the
+        random number generation, the journal and the dataset into 5
         separate files. All files will have the given prefix and
         different endings.
 
         Parameters
         ----------
         prefix : string
-            The file name prefix for the 3 files.
-        resule : boolean (``False``)
+            The file name prefix for the files.
+        resume : boolean (``False``)
             If ``True`` also save data needed for resuming the training.
             Otherwise only the model parameters and the journal is saved.
         """
-        save_model(self.model, prefix + '.npz')
-        with open(prefix + '_journal.pkl', 'wb') as fobj:
+        save_model(self.model, f'{prefix}.npz')
+        with open(f'{prefix}_journal.pkl', 'wb') as fobj:
             pickle.dump(self.journal, fobj)
         if not resume:
             return
-        save_updates(self.updates, prefix + '_updates.npz')
+        save_updates(self.updates, f'{prefix}_updates.npz')
         if self.dataset:
-            with open(prefix + '_data.pkl', 'wb') as fobj:
-                pickle.dump(self.dataset, fobj)
+            self.dataset.save_state(f'{prefix}_data.npz')
+        streams = get_random_streams(self.model)
+        if streams:
+            save_random_streams(streams, f'{prefix}_rng_data.npz')
 
     @classmethod
     def load_state(cls, model, prefix, **kwargs):
         """Load the state of the trainer from files.
 
-        This method will create a new trainer instance from
-        the files with the given prefix. It works to load a
-        trainer that was saved via `save_state`.
+        This method will create a new trainer instance from the files
+        with the given prefix. This method is to load a trainer that was
+        saved via `save_state`.
 
         Parameters
         ----------
         model: a :class:`Layer` instance
             The (uninitialized) model.
         prefix: string
-            The Prefix for the 3 files.
+            The Prefix for the files.
         **kwargs : keyword arguments
             Key-word arguments that will be passed down to the
             constructor.
@@ -187,25 +220,37 @@ class Trainer(object):
         Returns
         -------
         a :class:`Trainer` instance
-            the new trainer with all the parameter loaded
-            from the files
+            The new trainer with all the parameters loaded from the
+            files.
         """
-        model = load_model(model, prefix + '.npz')
+        # model parameters
+        model = load_model(model, f'{prefix}.npz')
+
+        # random stream data
+        filename = f'{prefix}_rng_data.npz'
+        if os.path.isfile(filename):
+            load_random_streams(model, filename)
+
         trainer = cls(model, **kwargs)
-        with open(prefix + '_journal.pkl', 'rb') as fobj:
-            trainer.journal = pickle.load(fobj)
-        filename = prefix + '_updates.npz'
+
+        # updates
+        filename = f'{prefix}_updates.npz'
         if os.path.isfile(filename):
             if trainer.updates is None:
-                # TODO : replace with proper logging
-                # TODO : try to get all parameters and set the values
-                print('WARNING : could not load update parameters.')
+                # TODO : replace with proper logging?
+                warn('Could not load update parameters.')
             else:
                 load_updates(trainer.updates, filename)
-        filename = prefix + '_data.pkl'
+
+        # journal
+        with open(f'{prefix}_journal.pkl', 'rb') as fobj:
+            trainer.journal = pickle.load(fobj)
+
+        # dataset
+        filename = f'{prefix}_data.npz'
         if os.path.isfile(filename):
-            with open(filename, 'rb') as fobj:
-                trainer.dataset = pickle.load(fobj)
+            trainer.dataset = cls.dataset_cls.from_state(filename)
+
         return trainer
 
     def train(self, *args, **kwargs):
@@ -215,9 +260,9 @@ class Trainer(object):
     @staticmethod
     def _log_error_(values, valid_err, valid_acc):
         """Print the training, val. loss and val. acc."""
-        print("    Training Loss:          {:>10.6f}".format(values[0].mean()))
-        print("    Validation Loss:        {:>10.6f}".format(valid_err))
-        print("    Validation Accuracy: {:>10.2%}".format(valid_acc))
+        print(f'    Training Loss:          {values[0].mean():>10.6f}')
+        print(f'    Validation Loss:        {valid_err:>10.6f}')
+        print(f'    Validation Accuracy: {valid_acc:>10.2%}')
 
     @staticmethod
     def load_journal(path):
@@ -240,13 +285,13 @@ class Trainer(object):
             ``'valid_acc'`` the accuracy on the test set.
 
             ``'valid_itr'`` the number of iteration at any point in
-            ``'valid_err'`` or  ``'valid_acc'``.
+                ``'valid_err'`` or ``'valid_acc'``.
 
             Additionally to that, there is also a ``numpy.array`` for
             every entry in the ``values`` parameter that was passed to
             the ``Trainer.set_training`` method. The array contains the
-            corresponding values to the theano variable from the
-            parameter for every iteration.
+            corresponding values to the logged variables for every
+            iteration.
         """
         raise NotImplementedError('')
 
@@ -278,12 +323,15 @@ class EpochTrainer(Trainer):
 
     def _train_epochs_(self, epochs, learning_rate):
         """Train the network for a given amount of epochs."""
-        train_fn = mini_batch_func(self._train, self.batchsize,
-                                   shuffle=True, mean=False)
         self.learning_rate = learning_rate
 
-        tmpl = 'Training {:>3} epochs with a learning rate of {:.6f}'
-        print(tmpl.format(epochs, learning_rate))
+        def train_fn():
+            iterator = self.dataset.training.iter(self.batchsize)
+            results = [self._train(d, l) for d, l in iterator]
+            return [numpy.array(r) for r in zip(*results)]
+
+        print(f'Training {epochs:>3} epochs '
+              f'with a learning rate of {learning_rate:.6f}.')
 
         done_epochs = len(self.journal) + 1
         for current in range(done_epochs, done_epochs + epochs):
@@ -291,7 +339,7 @@ class EpochTrainer(Trainer):
                      'batchsize': self.batchsize, 'epoch': current}
             start_time = time.time()
 
-            values = train_fn(*self.dataset.training_set)
+            values = train_fn()
             entry.update(zip(self._value_names, values))
             valid_err, valid_acc = self.test()
             entry['valid_err'] = valid_err
@@ -299,8 +347,8 @@ class EpochTrainer(Trainer):
 
             duration = time.time() - start_time
             self.journal.append(entry)
-            print("Epoch {:>3}/{:>3} took {:.3f}s".format(
-                current, self._total_epochs, duration))
+            print(f'Epoch {current:>3}/{self._total_epochs:>3}'
+                  f' took {duration:.3f}s')
             self._log_error_(values, valid_err, valid_acc)
 
     def train_epochs(self, epochs, learning_rate, **kwargs):
@@ -317,8 +365,8 @@ class EpochTrainer(Trainer):
         start_time = time.time()
         self._train_epochs_(epochs, learning_rate, **kwargs)
         duration = time.time() - start_time
-        tmpl = "Training done. Time:{:>15.3f}s \t({}, epochs, ~{:.3f}s/epoch)"
-        print(tmpl.format(duration, epochs, duration / epochs))
+        print(f'Training done. Time:{duration:>15.3f}s \t({epochs} epochs,'
+              f' ~{duration / epochs:.3f}s/epoch).')
 
     def train(self, config, **kwargs):
         """Train the network according to a given schedule.
@@ -326,13 +374,12 @@ class EpochTrainer(Trainer):
         Parameters
         ----------
         config : list of dictionaries
-            A learning schedule for training. It is represented
-            as a list of dictionaries, each containing a
-            ``'learning rate'`` and a ``'epochs'`` field that
-            state how many epochs are to be trained with that learning
-            rate.
+            A learning schedule for training. It is represented as a
+            list of dictionaries, each containing a ``'learning rate'``
+            and a ``'epochs'`` field that state how many epochs are to
+            be trained with that learning rate.
         """
-        print("Start training...")
+        print('Start training...')
         num_epochs = sum(e['epochs'] for e in config)
         self._total_epochs += num_epochs
         start_time = time.time()
@@ -340,8 +387,8 @@ class EpochTrainer(Trainer):
             self._train_epochs_(entry['epochs'], entry['learning rate'],
                                 **kwargs)
         duration = time.time() - start_time
-        tmpl = "Training done. Time:{:>15.3f}s \t({}, epochs, ~{:.3f}s/epoch)"
-        print(tmpl.format(duration, num_epochs, duration / num_epochs))
+        print(f'Training done. Time: {duration:>15.3f}s \t({num_epochs}'
+              f' epochs, ~{duration / num_epochs:.3f}s/epoch).')
 
     @staticmethod
     def load_journal(path):
@@ -364,7 +411,7 @@ class EpochTrainer(Trainer):
             ``'valid_acc'`` the accuracy on the test set.
 
             ``'valid_itr'`` the number of iteration at any point in
-            ``'valid_err'`` or  ``'valid_acc'``.
+                ``'valid_err'`` or ``'valid_acc'``.
 
             ``'train_err_epoch'`` the training error by epoch
             (as 2d-array).
@@ -376,10 +423,6 @@ class EpochTrainer(Trainer):
             values to the theano variable for every iteration. The other
             has the additional postfix ``'_epoch'`` and contains the
             epoch wise entries just like ``'train_err_epoch'``.
-
-        Note: The network was trained a full epoch (all entries from the
-        data set) so the last batch in every epoch might come from a
-        smaller batch than the others.
         """
         with open(path, 'rb') as fobj:
             journal = pickle.load(fobj)
@@ -433,7 +476,6 @@ class IterationTrainer(Trainer):
     def __init__(self, *args, **kwargs):
         super(IterationTrainer, self).__init__(*args, **kwargs)
         self._total_iters = 0
-        self._mini_batch_iter = None
 
     @classmethod
     def load_state(cls, model, prefix, **kwargs):
@@ -445,10 +487,11 @@ class IterationTrainer(Trainer):
     def _train_iters_(self, iterations, learning_rate, tick=200):
         """Train the model for a given amount of iterations."""
         self.learning_rate = learning_rate
+        iterator = self.dataset.training.endless_iter(self.batchsize)
 
-        tmpl = 'Training {:>3} iterations with a learning rate of {:.6f}'
-        print(tmpl.format(iterations, learning_rate))
-        tmpl = "Iteration {:>7}/{:>7} @ ~{:.3f} iterations/s"
+        print(f'Training {iterations:>3} iterations'
+              f' with a learning rate of {learning_rate:.6f}.')
+        tmpl = 'Iteration {:>7}/{:>7} @ ~{:.3f} iterations/s'
 
         done_iters = len(self.journal) + 1
         start_time = time.time()
@@ -457,7 +500,7 @@ class IterationTrainer(Trainer):
                      'batchsize': self.batchsize,
                      'iteration': current}
             self.journal.append(entry)
-            data, labels = next(self._mini_batch_iter)
+            data, labels = next(iterator)
             values = self._train(data, labels)
             entry.update(zip(self._value_names, values))
 
@@ -484,13 +527,11 @@ class IterationTrainer(Trainer):
             ``tick`` iterations.
         """
         self._total_iters += iterations
-        self._mini_batch_iter = self.dataset.endless_training_iter(
-            self.batchsize)
         start_time = time.time()
         self._train_iters_(iterations, learning_rate, **kwargs)
         duration = time.time() - start_time
-        tmpl = "Training done. Time:{:>15.3f}s \t({}, iters., ~{:.3f} iter/s)"
-        print(tmpl.format(duration, iterations, iterations / duration))
+        print(f'Training done. Time:{duration:>15.3f}s \t({iterations} iters.,'
+              f' ~{iterations / duration:.3f} iter/s).')
 
     def train(self, config, **kwargs):
         """Train the network according to a given schedule.
@@ -498,11 +539,10 @@ class IterationTrainer(Trainer):
         Parameters
         ----------
         config : list of dictionaries
-            A learning schedule for training. It is represented
-            as a list of dictionaries, each containing a
-            ``'learning rate'`` and a ``'iterations'`` field that
-            state how many iterations are to be trained with that
-            learning rate.
+            A learning schedule for training. It is represented as a
+            list of dictionaries, each containing a ``'learning rate'``
+            and a ``'iterations'`` field that state how many iterations
+            are to be trained with that learning rate.
         tick : integer (``200``)
             The network will be evaluated on the test set every
             ``tick`` iterations.
@@ -510,15 +550,13 @@ class IterationTrainer(Trainer):
         print("Start training...")
         iterations = sum(e['iterations'] for e in config)
         self._total_iters += iterations
-        self._mini_batch_iter = self.dataset.endless_training_iter(
-            self.batchsize)
         start_time = time.time()
         for entry in config:
             self._train_iters_(entry['iterations'], entry['learning rate'],
                                **kwargs)
         delta = time.time() - start_time
-        tmpl = "Training done. Time:{:>15.3f}s \t({}, iters, ~{:.3f} iter/s)"
-        print(tmpl.format(delta, iterations, iterations / delta))
+        print(f'Training done. Time:{delta:>15.3f}s \t({iterations} iters,'
+              f' ~{iterations / delta:.3f} iter/s).')
 
     @staticmethod
     def load_journal(path):

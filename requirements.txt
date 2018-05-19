@@ -3,6 +3,7 @@ numpy
 scipy
 theano
 lasagne
+h5py
 
 # plotting
 matplotlib

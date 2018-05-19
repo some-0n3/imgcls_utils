@@ -168,7 +168,7 @@ def product_griter(row_iter, col_iter, parent=None):
     rows = tuple(row_iter)
     columns = tuple(col_iter)
     griter = iter_grid(len(rows), len(columns), parent=parent)
-    for grid, (row, colum) in zip(griter, product(row_iter, col_iter)):
+    for grid, (row, colum) in zip(griter, product(rows, columns)):
         yield row, colum, grid
 
 

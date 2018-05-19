@@ -5,14 +5,66 @@ image augmentation as done in the `Deeply-Supervised Nets
 <https://arxiv.org/abs/1409.5185>`_ and other papers.
 """
 import numpy
+from lasagne.utils import floatX
 
-from . import DataSet, cifar
+from . import DataSet, TrainingData, cifar
 
 
 __all__ = ('CIFAR10', 'CIFAR100')
 
 
 class Augmentation(object):
+    """Wrapper class for the on-the-fly image augmentation.
+
+    The data is zero padded four pixels at each side and then (on-the-fly)
+    cropped to the 32x32. After that the image is randomly flipped
+    horizontally.
+
+    Parameters
+    ----------
+    data : ``numpy.array``
+        The data to augment.
+    random_state : ``numpy.random.RandomState``
+        The random state used for the image augmentation.
+    """
+
+    def __init__(self, data, random_state):
+        self.random = random_state
+        self.shape = data.shape
+        # zero padding 4 pixels left, right, top, bottom
+        data = numpy.pad(data, ((0, 0), (0, 0), (4, 4), (4, 4)),
+                         mode='constant')
+
+        self.normal = data
+        self.flipped = data[:, :, :, ::-1]
+
+    @staticmethod
+    def crop_image(image, x_offset, y_offset):
+        """Crop a image with the given offsets."""
+        return image[:, x_offset:x_offset + 32, y_offset:y_offset + 32]
+
+    def __len__(self):
+        return len(self.normal)
+
+    def __getitem__(self, given):
+        # TODO : better implementation
+        normal = self.normal[given]
+        flipped = self.flipped[given]
+
+        if isinstance(given, int):
+            x_off, y_off = self.random.randint(0, 8, size=(2, ))
+            coin = self.random.choice((True, False))
+            return self.crop_image(normal if coin else flipped, x_off, y_off)
+
+        length = len(normal)
+        coins = self.random.choice((True, False), size=(length, ))
+        crops = self.random.randint(0, 8, size=(length, 2))
+        iterator = zip(normal, flipped, coins, crops)
+        return numpy.stack(self.crop_image(n if c else f, x, y)
+                           for n, f, c, (x, y) in iterator)
+
+
+class AugmentedTrainingData(TrainingData):
     """Perform pre-processing an image augmentation.
 
     This class performs the pre-processing and an on-the-fly image
@@ -26,7 +78,12 @@ class Augmentation(object):
     Parameters
     ----------
     data : ``numpy.array``
-        The data to augment.
+        The input data to augment.
+    labels : ``numpy.array`` or ``list``
+        The label information.
+    random_state : dictionary or ``None`` (``None``)
+        The random state to use for the training iterations and image
+        augmentation.
     scale : float (``1.0``)
         The scale for the data.
     epsilon : float (``1e-8``)
@@ -36,52 +93,37 @@ class Augmentation(object):
         The "Delta Degrees of Freedom" used for computing the variance.
     """
 
-    def __init__(self, data, scale=1.0, epsilon=1e-8, ddof=1):
-        self.shape = data.shape
-        self.scale = scale
+    def __init__(self, *args, scale=1.0, epsilon=1e-8, ddof=1, **kwargs):
+        super(AugmentedTrainingData, self).__init__(*args, **kwargs)
 
-        self.mean = numpy.mean(data, axis=(0, 2, 3), keepdims=True)[0]
-        data -= self.mean
+        self.scale = floatX(scale)
+        self.mean = numpy.mean(self.data, axis=(0, 2, 3), keepdims=True)[0]
+        self.std = floatX(numpy.maximum(numpy.std(self.data, axis=(0, 2, 3),
+                                                  keepdims=True, ddof=ddof)[0],
+                                        epsilon))
+        self._data = Augmentation(self.normalized(self.data), self.random)
 
-        norm = numpy.var(data, axis=(0, 2, 3), keepdims=True, ddof=ddof)[0]
-        self.normalizer = numpy.maximum(numpy.sqrt(norm), epsilon)
+    @property
+    def state(self):
+        return {'data': self.data.normal[:, :, 4:36, 4:36],
+                'labels': self.labels, 'random_state': self.random.get_state(),
+                'mean': self.mean, 'std': self.std, 'scale': self.scale}
 
-        data = data / self.normalizer * self.scale
+    @classmethod
+    def from_state(cls, state):
+        obj = cls.__new__(cls)
+        obj.mean = floatX(state['mean'])
+        obj.std = floatX(state['std'])
+        obj.scale = floatX(state['scale'])
+        obj.random = numpy.random.RandomState()
+        obj.random.set_state(state['random_state'])
+        obj._labels = numpy.array(state['labels'], dtype=numpy.int32)
+        obj._data = Augmentation(floatX(state['data']), obj.random)
+        return obj
 
-        # zero padding 4 pixels left, right, top, bottom
-        data = numpy.pad(data, ((0, 0), (0, 0), (4, 4), (4, 4)),
-                         mode='constant')
-
-        self.normal = data
-        self.flipped = data[:, :, :, ::-1]
-
-    def normalize(self, data):
+    def normalized(self, data):
         """Return a normalized version of the data."""
-        return (data - self.mean) / self.normalizer * self.scale
-
-    @staticmethod
-    def crop_image(image, x_offset, y_offset):
-        """Crop a image with the given offsets."""
-        return image[:, x_offset:x_offset + 32, y_offset:y_offset + 32]
-
-    def __len__(self):
-        return len(self.normal)
-
-    def __getitem__(self, given):
-        normal = self.normal[given]
-        flipped = self.flipped[given]
-
-        if isinstance(given, int):
-            x_off, y_off = numpy.random.randint(0, 8, size=(2, ))
-            coin = numpy.random.choice((True, False))
-            return self.crop_image(normal if coin else flipped, x_off, y_off)
-
-        length = len(normal)
-        coins = numpy.random.choice((True, False), size=(length, ))
-        crops = numpy.random.randint(0, 8, size=(length, 2))
-        iterator = zip(normal, flipped, coins, crops)
-        return numpy.stack(self.crop_image(n if c else f, x, y)
-                           for n, f, c, (x, y) in iterator)
+        return (data - self.mean) / self.std * self.scale
 
 
 class AugmentedCIFAR(DataSet):
@@ -98,12 +140,14 @@ class AugmentedCIFAR(DataSet):
 
     Parameters
     ----------
-    testsplit : float in [0, 1] or integer (``0``)
-        Says how may data points from the training set are reserved
-        for the test set. If ``testsplit`` is ``0`` (or less) the
-        validation set is used as test set.
-        The parameter is either a float in [0, 1] describing the split
-        in percent or an integer describing the number of elements.
+    testsplit : ``None``, ``'validation'`` or positive number (``None``)
+        Create a hold out test set (or not) from some of the training
+        data. In case of ``None``, no test set will be created. The
+        string ``'validation'`` will use the validation set for this.
+        In case ``testsplit`` is a number the test set will be randomly
+        drawn from the training set. If the number is an integer it will
+        specify the number of examples in the test set. A float in [0, 1]
+        describes the split in percent.
     root : string (``'./_datasets'``)
         The root-directory for all the files (downloaded and cached).
     overwrite : boolean (``False``)
@@ -113,24 +157,34 @@ class AugmentedCIFAR(DataSet):
     contrast normalization.
     """
 
+    training_class = AugmentedTrainingData
+
     def __init__(self, *args, interval=None, **kwargs):
         if interval is not None:
             raise ValueError(
                 'Augmentation does not support setting an interval.')
         super(AugmentedCIFAR, self).__init__(*args, interval=None, **kwargs)
-        self._x_train = Augmentation(self._x_train)
-        self._x_valid = self._x_train.normalize(self._x_valid)
-        if self._x_test is not self._x_valid:
-            self._x_test = self._x_train.normalize(self._x_test)
+
+        def normed(dataset):
+            data, labels = dataset.set
+            return self.test_class(self.training.normalized(data), labels)
+
+        if self.test is None:
+            self.validation = normed(self.validation)
+        elif self.validation is self.test:
+            self.test = self.validation = normed(self.validation)
+        else:
+            self.validation = normed(self.validation)
+            self.test = normed(self.test)
 
     @property
     def pixel_mean(self):
         """The pixel mean of the training set."""
-        return self._x_train.mean
+        return self.training.mean
 
-    def normalize(self, data):
+    def normalized(self, data):
         """Normalize the given data."""
-        return self._x_train.normalize(data)
+        return self.training.normalized(data)
 
 
 class CIFAR10(AugmentedCIFAR, cifar.CIFAR10):
@@ -151,12 +205,14 @@ class CIFAR10(AugmentedCIFAR, cifar.CIFAR10):
 
     Parameters
     ----------
-    testsplit : float in [0, 1] or integer (``0``)
-        Says how may data points from the training set are reserved
-        for the test set. If ``testsplit`` is ``0`` (or less) the
-        validation set is used as test set.
-        The parameter is either a float in [0, 1] describing the split
-        in percent or an integer describing the number of elements.
+    testsplit : ``None``, ``'validation'`` or positive number (``None``)
+        Create a hold out test set (or not) from some of the training
+        data. In case of ``None``, no test set will be created. The
+        string ``'validation'`` will use the validation set for this.
+        In case ``testsplit`` is a number the test set will be randomly
+        drawn from the training set. If the number is an integer it will
+        specify the number of examples in the test set. A float in [0, 1]
+        describes the split in percent.
     root : string (``'./_datasets'``)
         The root-directory for all the files (downloaded and cached).
     overwrite : boolean (``False``)
@@ -233,12 +289,14 @@ class CIFAR100(AugmentedCIFAR, cifar.CIFAR100):
 
     Parameters
     ----------
-    testsplit : float in [0, 1] or integer (``0``)
-        Says how may data points from the training set are reserved
-        for the test set. If ``testsplit`` is ``0`` (or less) the
-        validation set is used as test set.
-        The parameter is either a float in [0, 1] describing the split
-        in percent or an integer describing the number of elements.
+    testsplit : ``None``, ``'validation'`` or positive number (``None``)
+        Create a hold out test set (or not) from some of the training
+        data. In case of ``None``, no test set will be created. The
+        string ``'validation'`` will use the validation set for this.
+        In case ``testsplit`` is a number the test set will be randomly
+        drawn from the training set. If the number is an integer it will
+        specify the number of examples in the test set. A float in [0, 1]
+        describes the split in percent.
     root : string (``'./_datasets'``)
         The root-directory for all the files (downloaded and cached).
     overwrite : boolean (``False``)

@@ -34,7 +34,7 @@ def load_label_file(path):
 
 def download_file(name, root, overwrite):
     """Download one of the files."""
-    download('http://yann.lecun.com/exdb/mnist/{}'.format(name),
+    download(f'http://yann.lecun.com/exdb/mnist/{name}',
              join(root, name), overwrite)
 
 
@@ -47,14 +47,17 @@ class MNIST(DataSet):
 
     Parameters
     ----------
-    testsplit : float in [0, 1] or integer (``0``)
-        Says how may data points from the training set are reserved
-        for the test set. If ``testsplit`` is ``0`` (or less) the
-        validation set is used as test set.
-        The parameter is either a float in [0, 1] describing the split
-        in percent or an integer describing the number of elements.
-    interval : tuple (pair) of numbers or ``None`` (``None``)
-        The interval to put the data points into.
+    testsplit : ``None``, ``'validation'`` or positive number (``None``)
+        Create a hold out test set (or not) from some of the training
+        data. In case of ``None``, no test set will be created. The
+        string ``'validation'`` will use the validation set for this.
+        In case ``testsplit`` is a number the test set will be randomly
+        drawn from the training set. If the number is an integer it will
+        specify the number of examples in the test set. A float in [0, 1]
+        describes the split in percent.
+    interval : tuple (pair) of numbers or ``None`` (``(0, 1)``)
+        The interval to put the data points into. In case of ``None`` the
+        interval will not be changed.
     root : string (``'./_datasets'``)
         The root-directory for all the files (downloaded and cached).
     overwrite : boolean (``False``)
@@ -64,7 +67,7 @@ class MNIST(DataSet):
     <http://yann.lecun.com/exdb/mnist/>`_.
     """
 
-    cache_file = 'mnist.pkl'
+    cache_file = 'mnist.npz'
 
     def download(self, root='./_datasets', overwrite=False):
         root = join(root, 'mnist')
@@ -74,7 +77,7 @@ class MNIST(DataSet):
         download_file('t10k-images-idx3-ubyte.gz', root, overwrite)
         download_file('t10k-labels-idx1-ubyte.gz', root, overwrite)
 
-    def create(self, root='./_datasets'):
+    def extract(self, root='./_datasets'):
         return {
             'training data': load_data_file(
                 join(root, 'mnist', 'train-images-idx3-ubyte.gz')),
