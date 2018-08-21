@@ -65,7 +65,7 @@ def check_journals(baseline, journal):
     return True
 
 
-class Base(object):
+class Base():
 
     def test_create(self):
         model = example_network()

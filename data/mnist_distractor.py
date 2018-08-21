@@ -19,7 +19,7 @@ def fix_labels(labels, targets=(0, 1, 2, 3)):
     return numpy.vectorize(targets.__contains__)(labels)
 
 
-class Augmentation(object):
+class Augmentation():
     """Wrapper class for the on-the-fly image augmentation.
 
     This class takes a number of input images and distractors. Every

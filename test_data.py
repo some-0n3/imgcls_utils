@@ -50,11 +50,10 @@ def check_interval(data, lmin, lmax, soft=False):
     lmin, lmax = floatX(lmin), floatX(lmax)
     if soft:
         return numpy.min(data) >= lmin and numpy.max(data) <= lmax
-    else:
-        return numpy.min(data) == lmin and numpy.max(data) == lmax
+    return numpy.min(data) == lmin and numpy.max(data) == lmax
 
 
-class Simple(object):
+class Simple():
 
     @staticmethod
     def identical_data(baseline, copy):
@@ -109,7 +108,7 @@ class Simple(object):
 
     def test_from_state_iter(self):
         dataset = self.dataset_cls()
-        for data, labels in dataset.training.iter(100):
+        for _ in dataset.training.iter(100):
             pass
         copy = self.dataset_cls.from_state(dataset.state)
         assert self.identical_data(dataset, copy)
@@ -414,7 +413,7 @@ def check_dict(dct):
     return True
 
 
-class RealMixin(object):
+class RealMixin():
 
     def test_download(self):
         pytest.skip()

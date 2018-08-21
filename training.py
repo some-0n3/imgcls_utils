@@ -72,7 +72,7 @@ def load_random_streams(model, path):
             layer._srng = RandomStreams(fobj[f'seed_{i}'].item())
 
 
-class Trainer(object):
+class Trainer():
     """The default super class for all trainers.
 
     This class implements basic mechanisms for the training, but not the
@@ -237,7 +237,6 @@ class Trainer(object):
         filename = f'{prefix}_updates.npz'
         if os.path.isfile(filename):
             if trainer.updates is None:
-                # TODO : replace with proper logging?
                 warn('Could not load update parameters.')
             else:
                 load_updates(trainer.updates, filename)

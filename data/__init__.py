@@ -279,7 +279,7 @@ def save_dict(dct, path, fileformat=None, **kwargs):
         _save_dict_npz(dct, path, **kwargs)
 
 
-class Data(object):
+class Data():
     """A set of labeled data.
 
     Parameters
@@ -438,7 +438,7 @@ class TrainingData(Data):
                 'random_state': self.random.get_state()}
 
 
-class DataSet(object):
+class DataSet():
     """The basic super class for all data sets.
 
     A basic :class:`DataSet` has a training, an optional test and a

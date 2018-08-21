@@ -13,7 +13,7 @@ from . import DataSet, TrainingData, cifar
 __all__ = ('CIFAR10', 'CIFAR100')
 
 
-class Augmentation(object):
+class Augmentation():
     """Wrapper class for the on-the-fly image augmentation.
 
     The data is zero padded four pixels at each side and then (on-the-fly)
