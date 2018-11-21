@@ -6,7 +6,8 @@ import theano
 from decorator import contextmanager
 from lasagne.utils import floatX
 
-from .data import DataSet, cifar, cifar_lee14, mnist, mnist_distractor, svhn
+from .data import DataSet, cifar, cifar_lee14, mnist, mnist_distractor, \
+    svhn, svhn_huang16
 
 
 def identical_dataset(set1, set2, max_bs=500):
@@ -392,6 +393,83 @@ class Base(SplitNumber, SplitValid, Simple):
     pass
 
 
+class AlwaysTestSet(Simple):
+
+    @staticmethod
+    def identical_data(baseline, copy):
+        assert identical_dataset(baseline.training, copy.training)
+        assert identical_dataset(baseline.test, copy.test)
+        assert identical_dataset(baseline.validation, copy.validation)
+        return True
+
+    def test_testsplit(self):
+        with pytest.raises(ValueError):
+            self.dataset_cls(testsplit=0.1)
+
+    def test_create(self):
+        dataset = self.dataset_cls()
+        assert dataset.training
+        assert check_data(dataset.training)
+        assert dataset.validation
+        assert check_data(dataset.validation)
+        assert dataset.test
+        assert check_data(dataset.test)
+
+    def test_dims(self):
+        dataset = self.dataset_cls()
+        assert check_dims(dataset.training, self.train_shape)
+        assert check_dims(dataset.test, self.test_shape)
+        assert check_dims(dataset.validation, self.valid_shape)
+
+    def test_dtypes(self):
+        dataset = self.dataset_cls()
+
+        data = dataset.training.data[:]
+        assert data.dtype == theano.config.floatX
+        assert dataset.training.labels.dtype == numpy.dtype('int32')
+
+        data = dataset.test.data[:]
+        assert data.dtype == theano.config.floatX
+        assert dataset.test.labels.dtype == numpy.dtype('int32')
+
+        data = dataset.validation.data[:]
+        assert data.dtype == theano.config.floatX
+        assert dataset.validation.labels.dtype == numpy.dtype('int32')
+
+    def test_all_labels(self):
+        dataset = self.dataset_cls()
+        labels = numpy.concatenate((dataset.training.labels,
+                                    dataset.test.labels,
+                                    dataset.validation.labels))
+        labels = set(labels)
+        assert len(labels) == self.num_labels
+        assert tuple(range(len(labels))) == tuple(sorted(labels))
+
+    def test_test_labels(self):
+        dataset = self.dataset_cls()
+        labels = set(dataset.test.labels)
+        assert len(labels) == self.num_labels
+        assert tuple(range(len(labels))) == tuple(sorted(labels))
+
+    def test_state(self):
+        dataset = self.dataset_cls()
+        state = dataset.state
+        assert state
+        assert isinstance(state, dict)
+
+        assert 'training' in state
+        assert state['training']
+        assert isinstance(state['training'], dict)
+
+        assert 'validation' in state
+        assert state['validation']
+        assert isinstance(state['validation'], dict)
+
+        assert 'test' in state
+        assert state['test']
+        assert isinstance(state['test'], dict)
+
+
 def check_dict(dct):
     assert isinstance(dct, dict)
 
@@ -540,3 +618,22 @@ class TestAugCIFAR100(Real):
     def test_interval(self):
         with pytest.raises(ValueError):
             self.dataset_cls(interval=(0, 1))
+
+
+class TestAugSVHN(RealMixin, AlwaysTestSet):
+
+    dataset_cls = svhn_huang16.Normalized
+    train_shape = (598388, 3, 32, 32)
+    test_shape = (6000, 3, 32, 32)
+    valid_shape = (26032, 3, 32, 32)
+    num_labels = 10
+
+    def test_interval(self):
+        with pytest.raises(ValueError):
+            self.dataset_cls(interval=(0, 1))
+
+    def test_from_state_file_numpy(self):
+        pytest.skip()
+
+    def test_from_state_file_numpy_compressed(self):
+        pytest.skip()

@@ -35,6 +35,9 @@ classification. Currently included are:
 * A distractor data set constructed from MNIST. All the images show two numbers
   beside each other. If one of the numbers on the image is a number from 0-4
   the label will be ``1``, otherwise ``0``.
+* A version of SVHN with a conjoined training set (training data and extra
+  data), where 6,000 images are randomly taken as hold out test set. This
+  should follow common practice for SVHN.
 
 All data set classes take care of the download and pre-processing of the data
 and cache the results in a given directory. The downloading is done via either
